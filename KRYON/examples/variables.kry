@@ -1,0 +1,6 @@
+program VarTest {
+    fn start() {
+        var mensaje = "¡Kryon ahora soporta variables!";
+        output(mensaje);
+    }
+}
