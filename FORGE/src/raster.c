@@ -42,6 +42,11 @@ Token raster_next_token() {
         if (*src_cursor == '(') { src_cursor++; current_col++; return create_token(TOKEN_LPAREN, "("); }
         if (*src_cursor == ')') { src_cursor++; current_col++; return create_token(TOKEN_RPAREN, ")"); }
         if (*src_cursor == ';') { src_cursor++; current_col++; return create_token(TOKEN_SEMICOLON, ";"); }
+        if (*src_cursor == '=') { src_cursor++; current_col++; return create_token(TOKEN_ASSIGN, "="); }
+        if (*src_cursor == '+') { src_cursor++; current_col++; return create_token(TOKEN_PLUS, "+"); }
+        if (*src_cursor == '-') { src_cursor++; current_col++; return create_token(TOKEN_MINUS, "-"); }
+        if (*src_cursor == '*') { src_cursor++; current_col++; return create_token(TOKEN_STAR, "*"); }
+        if (*src_cursor == '/') { src_cursor++; current_col++; return create_token(TOKEN_SLASH, "/"); }
 
         if (*src_cursor == '"') {
             src_cursor++;
@@ -64,6 +69,21 @@ Token raster_next_token() {
             return t;
         }
 
+        if (isdigit(*src_cursor)) {
+            const char *start = src_cursor;
+            while (isdigit(*src_cursor)) {
+                src_cursor++;
+                current_col++;
+            }
+            int length = src_cursor - start;
+            char *num = (char *)malloc(length + 1);
+            strncpy(num, start, length);
+            num[length] = '\0';
+            Token t = create_token(TOKEN_NUMBER, num);
+            free(num);
+            return t;
+        }
+
         if (isalpha(*src_cursor) || *src_cursor == '_') {
             const char *start = src_cursor;
             while (isalnum(*src_cursor) || *src_cursor == '_') {
@@ -79,6 +99,7 @@ Token raster_next_token() {
             if (strcmp(ident, "program") == 0) type = TOKEN_PROGRAM;
             else if (strcmp(ident, "fn") == 0) type = TOKEN_FN;
             else if (strcmp(ident, "output") == 0) type = TOKEN_OUTPUT;
+            else if (strcmp(ident, "var") == 0) type = TOKEN_VAR;
 
             Token t = create_token(type, ident);
             free(ident);

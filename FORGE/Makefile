@@ -14,7 +14,7 @@ clean:
 install: $(TARGET)
 	cp $(TARGET) $(PREFIX)/bin/$(TARGET)
 	chmod +x $(PREFIX)/bin/$(TARGET)
-	@echo "¡FORGE instalado globalmente!"
+	@echo "FORGE instalado globalmente!"
 
 uninstall:
 	rm -f $(PREFIX)/bin/$(TARGET)

@@ -4,25 +4,23 @@
 typedef enum {
     TOKEN_EOF = 0,
     TOKEN_ERROR,
-
-    // Palabras clave de Kryon
     TOKEN_PROGRAM,
     TOKEN_FN,
     TOKEN_OUTPUT,
-    TOKEN_VAR,      // Palabra clave: var
-
-    // Literales e Identificadores
+    TOKEN_VAR,
     TOKEN_IDENTIFIER,
     TOKEN_STRING,
     TOKEN_NUMBER,
-
-    // Delimitadores y Símbolos
-    TOKEN_LBRACE,   // {
-    TOKEN_RBRACE,   // }
-    TOKEN_LPAREN,   // (
-    TOKEN_RPAREN,   // )
-    TOKEN_SEMICOLON,// ;
-    TOKEN_ASSIGN    // =
+    TOKEN_LBRACE,
+    TOKEN_RBRACE,
+    TOKEN_LPAREN,
+    TOKEN_RPAREN,
+    TOKEN_SEMICOLON,
+    TOKEN_ASSIGN,
+    TOKEN_PLUS,
+    TOKEN_MINUS,
+    TOKEN_STAR,
+    TOKEN_SLASH
 } TokenType;
 
 typedef struct {

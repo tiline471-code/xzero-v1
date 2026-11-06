@@ -4,6 +4,25 @@
 #include "frame.h"
 #include "anvil.h"
 
+static void emit_expression(FILE *out, ASTNode *node) {
+    if (!node) return;
+    if (node->type == NODE_LITERAL) {
+        if (node->string_value) {
+            fprintf(out, "%s", node->string_value);
+        }
+    } else if (node->type == NODE_IDENTIFIER) {
+        if (node->name) {
+            fprintf(out, "%s", node->name);
+        }
+    } else if (node->type == NODE_BINARY_EXPR) {
+        fprintf(out, "(");
+        if (node->child_count > 0) emit_expression(out, node->children[0]);
+        if (node->name) fprintf(out, " %s ", node->name);
+        if (node->child_count > 1) emit_expression(out, node->children[1]);
+        fprintf(out, ")");
+    }
+}
+
 static void emit_node(FILE *out, ASTNode *node) {
     if (!node) return;
 
@@ -32,17 +51,27 @@ static void emit_node(FILE *out, ASTNode *node) {
         fprintf(out, "}\n\n");
     } 
     else if (node->type == NODE_VAR_DECL) {
-        // Traducir 'var nombre = "valor";' a 'const char *nombre = "valor";' en C
-        if (node->name && node->string_value) {
-            fprintf(out, "    const char *%s = \"%s\";\n", node->name, node->string_value);
+        if (node->name && node->child_count > 0) {
+            fprintf(out, "    int %s = ", node->name);
+            emit_expression(out, node->children[0]);
+            fprintf(out, ";\n");
         }
     }
     else if (node->type == NODE_OUTPUT) {
-        // Traducir 'output(variable)' o 'output("texto")' a printf
-        if (node->string_value) {
-            // Verificamos si el valor es una variable o un texto directo
-            // (Si no tiene espacios y parece un identificador simple, lo tratamos como variable o string)
-            fprintf(out, "    printf(\"%%s\\n\", %s);\n", node->string_value);
+        if (node->child_count > 0) {
+            // Verificamos si la expresión es un string literal o número/variable numérica
+            // Por simplicidad inicial para output, soportamos tanto cadenas como números/enteros con %s o %d según corresponda, o un formateador genérico.
+            // Hagámoslo robusto detectando el tipo de expresión.
+            ASTNode *expr = node->children[0];
+            if (expr->type == NODE_LITERAL && expr->string_value && expr->string_value[0] == '"') {
+                fprintf(out, "    printf(\"%%s\\n\", ");
+                emit_expression(out, expr);
+                fprintf(out, ");\n");
+            } else {
+                fprintf(out, "    printf(\"%%d\\n\", ");
+                emit_expression(out, expr);
+                fprintf(out, ");\n");
+            }
         }
     }
 }

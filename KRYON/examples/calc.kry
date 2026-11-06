@@ -1,0 +1,9 @@
+program CalcTest {
+    fn start() {
+        var a = 100;
+        var b = 25;
+        var c = 5;
+        var total = (a - b) / c;
+        output(total);
+    }
+}

@@ -6,15 +6,18 @@
 typedef enum {
     NODE_PROGRAM,
     NODE_FUNCTION,
+    NODE_VAR_DECL,
     NODE_OUTPUT,
-    NODE_VAR_DECL
+    NODE_BINARY_EXPR,
+    NODE_LITERAL,
+    NODE_IDENTIFIER
 } ASTNodeType;
 
 typedef struct ASTNode {
     ASTNodeType type;
-    char *name;                  // Nombre del programa, función o variable
-    char *string_value;          // Valor o contenido asociado
-    struct ASTNode **children;   
+    char *name;
+    char *string_value;
+    struct ASTNode **children;
     int child_count;
 } ASTNode;
 
