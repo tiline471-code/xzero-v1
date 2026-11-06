@@ -1,116 +1,128 @@
+#include "raster.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include "raster.h"
 
-static const char *src_cursor;
-static int current_line = 1;
-static int current_col = 1;
-
-void raster_init(const char *source_code) {
-    src_cursor = source_code;
-    current_line = 1;
-    current_col = 1;
+static int is_alpha(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
 }
 
-static Token create_token(TokenType type, const char *lexeme) {
-    Token token;
-    token.type = type;
-    token.lexeme = strdup(lexeme);
-    token.line = current_line;
-    token.column = current_col;
-    return token;
+static int is_digit(char c) {
+    return c >= '0' && c <= '9';
 }
 
-Token raster_next_token() {
-    while (*src_cursor != '\0') {
-        if (*src_cursor == ' ' || *src_cursor == '\r' || *src_cursor == '\t') {
-            src_cursor++;
-            current_col++;
-            continue;
-        }
-        if (*src_cursor == '\n') {
-            src_cursor++;
-            current_line++;
-            current_col = 1;
+Token *raster_tokenize(const char *source, int *out_count) {
+    int capacity = 64;
+    int count = 0;
+    Token *tokens = malloc(sizeof(Token) * capacity);
+
+    int length = strlen(source);
+    int i = 0;
+
+    while (i < length) {
+        char c = source[i];
+
+        if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+            i++;
             continue;
         }
 
-        if (*src_cursor == '{') { src_cursor++; current_col++; return create_token(TOKEN_LBRACE, "{"); }
-        if (*src_cursor == '}') { src_cursor++; current_col++; return create_token(TOKEN_RBRACE, "}"); }
-        if (*src_cursor == '(') { src_cursor++; current_col++; return create_token(TOKEN_LPAREN, "("); }
-        if (*src_cursor == ')') { src_cursor++; current_col++; return create_token(TOKEN_RPAREN, ")"); }
-        if (*src_cursor == ';') { src_cursor++; current_col++; return create_token(TOKEN_SEMICOLON, ";"); }
-        if (*src_cursor == '=') { src_cursor++; current_col++; return create_token(TOKEN_ASSIGN, "="); }
-        if (*src_cursor == '+') { src_cursor++; current_col++; return create_token(TOKEN_PLUS, "+"); }
-        if (*src_cursor == '-') { src_cursor++; current_col++; return create_token(TOKEN_MINUS, "-"); }
-        if (*src_cursor == '*') { src_cursor++; current_col++; return create_token(TOKEN_STAR, "*"); }
-        if (*src_cursor == '/') { src_cursor++; current_col++; return create_token(TOKEN_SLASH, "/"); }
-
-        if (*src_cursor == '"') {
-            src_cursor++;
-            current_col++;
-            const char *start = src_cursor;
-            while (*src_cursor != '"' && *src_cursor != '\0') {
-                src_cursor++;
-                current_col++;
-            }
-            int length = src_cursor - start;
-            char *value = (char *)malloc(length + 1);
-            strncpy(value, start, length);
-            value[length] = '\0';
-            if (*src_cursor == '"') {
-                src_cursor++;
-                current_col++;
-            }
-            Token t = create_token(TOKEN_STRING, value);
-            free(value);
-            return t;
+        if (c == '/' && i + 1 < length && source[i+1] == '/') {
+            while (i < length && source[i] != '\n') i++;
+            continue;
         }
 
-        if (isdigit(*src_cursor)) {
-            const char *start = src_cursor;
-            while (isdigit(*src_cursor)) {
-                src_cursor++;
-                current_col++;
+        if (is_alpha(c)) {
+            int start = i;
+            while (i < length && (is_alpha(source[i]) || is_digit(source[i]))) {
+                i++;
             }
-            int length = src_cursor - start;
-            char *num = (char *)malloc(length + 1);
-            strncpy(num, start, length);
-            num[length] = '\0';
-            Token t = create_token(TOKEN_NUMBER, num);
-            free(num);
-            return t;
-        }
-
-        if (isalpha(*src_cursor) || *src_cursor == '_') {
-            const char *start = src_cursor;
-            while (isalnum(*src_cursor) || *src_cursor == '_') {
-                src_cursor++;
-                current_col++;
-            }
-            int length = src_cursor - start;
-            char *ident = (char *)malloc(length + 1);
-            strncpy(ident, start, length);
-            ident[length] = '\0';
+            int len = i - start;
+            char *lexeme = malloc(len + 1);
+            memcpy(lexeme, &source[start], len);
+            lexeme[len] = '\0';
 
             TokenType type = TOKEN_IDENTIFIER;
-            if (strcmp(ident, "program") == 0) type = TOKEN_PROGRAM;
-            else if (strcmp(ident, "fn") == 0) type = TOKEN_FN;
-            else if (strcmp(ident, "output") == 0) type = TOKEN_OUTPUT;
-            else if (strcmp(ident, "var") == 0) type = TOKEN_VAR;
+            if (strcmp(lexeme, "var") == 0) type = TOKEN_VAR;
+            else if (strcmp(lexeme, "print") == 0) type = TOKEN_OUTPUT;
+            else if (strcmp(lexeme, "fn") == 0) type = TOKEN_FN;
 
-            Token t = create_token(type, ident);
-            free(ident);
-            return t;
+            if (count >= capacity) {
+                capacity *= 2;
+                tokens = realloc(tokens, sizeof(Token) * capacity);
+            }
+            tokens[count].type = type;
+            tokens[count].lexeme = lexeme;
+            tokens[count].line = 1;
+            count++;
+            continue;
         }
 
-        char unknown[2] = { *src_cursor, '\0' };
-        src_cursor++;
-        current_col++;
-        return create_token(TOKEN_ERROR, unknown);
+        if (is_digit(c)) {
+            int start = i;
+            while (i < length && is_digit(source[i])) {
+                i++;
+            }
+            int len = i - start;
+            char *lexeme = malloc(len + 1);
+            memcpy(lexeme, &source[start], len);
+            lexeme[len] = '\0';
+
+            if (count >= capacity) {
+                capacity *= 2;
+                tokens = realloc(tokens, sizeof(Token) * capacity);
+            }
+            tokens[count].type = TOKEN_INT;
+            tokens[count].lexeme = lexeme;
+            tokens[count].line = 1;
+            count++;
+            continue;
+        }
+
+        TokenType type = TOKEN_UNKNOWN;
+        char lexeme[2] = {c, '\0'};
+
+        if (c == '=') type = TOKEN_ASSIGN;
+        else if (c == '+') type = TOKEN_PLUS;
+        else if (c == '-') type = TOKEN_MINUS;
+        else if (c == '*') type = TOKEN_STAR;
+        else if (c == '/') type = TOKEN_SLASH;
+        else if (c == ';') type = TOKEN_SEMICOLON;
+        else if (c == '(') type = TOKEN_LPAREN;
+        else if (c == ')') type = TOKEN_RPAREN;
+        else if (c == '{') type = TOKEN_LBRACE;
+        else if (c == '}') type = TOKEN_RBRACE;
+        else if (c == ',') type = TOKEN_COMMA;
+
+        i++;
+        if (count >= capacity) {
+            capacity *= 2;
+            tokens = realloc(tokens, sizeof(Token) * capacity);
+        }
+        tokens[count].type = type;
+        tokens[count].lexeme = strdup(lexeme);
+        tokens[count].line = 1;
+        count++;
     }
 
-    return create_token(TOKEN_EOF, "");
+    if (count >= capacity) {
+        capacity += 1;
+        tokens = realloc(tokens, sizeof(Token) * capacity);
+    }
+    tokens[count].type = TOKEN_EOF;
+    tokens[count].lexeme = strdup("");
+    tokens[count].line = 1;
+    count++;
+
+    *out_count = count;
+    return tokens;
+}
+
+void raster_free_tokens(Token *tokens, int count) {
+    if (!tokens) return;
+    for (int i = 0; i < count; i++) {
+        free(tokens[i].lexeme);
+    }
+    free(tokens);
 }

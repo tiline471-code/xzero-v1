@@ -1,210 +1,235 @@
+#include "frame.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "raster.h"
-#include "frame.h"
 
-static Token current_token;
+typedef struct {
+    Token *tokens;
+    int count;
+    int current;
+} Parser;
 
-void frame_init(void) {
-    current_token = raster_next_token();
+static Token parser_peek(Parser *p) {
+    if (p->current >= p->count) {
+        Token t = {TOKEN_EOF, "", 0};
+        return t;
+    }
+    return p->tokens[p->current];
 }
 
-static void consume(TokenType type) {
-    if (current_token.type == type) {
-        if (current_token.lexeme) free(current_token.lexeme);
-        current_token = raster_next_token();
-    } else {
-        printf("FRAME Error: Se esperaba el token tipo %d (Recibido tipo %d con lexema '%s')\n", type, current_token.type, current_token.lexeme ? current_token.lexeme : "NULL");
-        if (current_token.type != TOKEN_EOF) {
-            if (current_token.lexeme) free(current_token.lexeme);
-            current_token = raster_next_token();
+static Token parser_advance(Parser *p) {
+    if (p->current < p->count) {
+        return p->tokens[p->current++];
+    }
+    return p->tokens[p->count - 1];
+}
+
+static int parser_match(Parser *p, TokenType type) {
+    Token t = parser_peek(p);
+    if (t.type == type) {
+        parser_advance(p);
+        return 1;
+    }
+    return 0;
+}
+
+static ASTNode *parse_expression(Parser *p);
+
+static ASTNode *parse_primary(Parser *p) {
+    Token t = parser_advance(p);
+    if (t.type == TOKEN_INT) {
+        ASTNode *node = malloc(sizeof(ASTNode));
+        node->type = NODE_LITERAL;
+        node->data.literal.value = atoi(t.lexeme);
+        return node;
+    }
+    if (t.type == TOKEN_IDENTIFIER) {
+        if (parser_match(p, TOKEN_LPAREN)) {
+            char *name = strdup(t.lexeme);
+            ASTNode **args = NULL;
+            int arg_count = 0;
+            if (!parser_match(p, TOKEN_RPAREN)) {
+                do {
+                    ASTNode *arg = parse_expression(p);
+                    args = realloc(args, sizeof(ASTNode *) * (arg_count + 1));
+                    args[arg_count++] = arg;
+                } while (parser_match(p, TOKEN_COMMA));
+                parser_match(p, TOKEN_RPAREN);
+            }
+            ASTNode *node = malloc(sizeof(ASTNode));
+            node->type = NODE_CALL;
+            node->data.call.name = name;
+            node->data.call.args = args;
+            node->data.call.arg_count = arg_count;
+            return node;
+        } else {
+            ASTNode *node = malloc(sizeof(ASTNode));
+            node->type = NODE_VARIABLE;
+            node->data.variable.name = strdup(t.lexeme);
+            return node;
         }
     }
-}
-
-static ASTNode *create_node(ASTNodeType type, const char *name, const char *string_value) {
-    ASTNode *node = (ASTNode *)malloc(sizeof(ASTNode));
-    node->type = type;
-    node->name = name ? strdup(name) : NULL;
-    node->string_value = string_value ? strdup(string_value) : NULL;
-    node->children = NULL;
-    node->child_count = 0;
-    return node;
-}
-
-static void add_child(ASTNode *parent, ASTNode *child) {
-    parent->child_count++;
-    parent->children = (ASTNode **)realloc(parent->children, sizeof(ASTNode *) * parent->child_count);
-    parent->children[parent->child_count - 1] = child;
-}
-
-static ASTNode *parse_expression(void);
-static ASTNode *parse_function(void);
-static ASTNode *parse_statement(void);
-static ASTNode *parse_var_decl(void);
-static ASTNode *parse_output(void);
-
-static ASTNode *parse_primary(void) {
-    ASTNode *node = NULL;
-    if (current_token.type == TOKEN_NUMBER) {
-        node = create_node(NODE_LITERAL, NULL, current_token.lexeme);
-        consume(TOKEN_NUMBER);
-    } else if (current_token.type == TOKEN_STRING) {
-        int len = strlen(current_token.lexeme);
-        char *val = (char *)malloc(len + 3);
-        sprintf(val, "\"%s\"", current_token.lexeme);
-        node = create_node(NODE_LITERAL, NULL, val);
-        free(val);
-        consume(TOKEN_STRING);
-    } else if (current_token.type == TOKEN_IDENTIFIER) {
-        node = create_node(NODE_IDENTIFIER, current_token.lexeme, NULL);
-        consume(TOKEN_IDENTIFIER);
-    } else if (current_token.type == TOKEN_LPAREN) {
-        consume(TOKEN_LPAREN);
-        node = parse_expression();
-        consume(TOKEN_RPAREN);
-    }
-    return node;
-}
-
-static ASTNode *parse_term(void) {
-    ASTNode *node = parse_primary();
-    while (current_token.type == TOKEN_STAR || current_token.type == TOKEN_SLASH) {
-        TokenType op_type = current_token.type;
-        const char *op_str = (op_type == TOKEN_STAR) ? "*" : "/";
-        consume(op_type);
-        ASTNode *right = parse_primary();
-        ASTNode *bin_node = create_node(NODE_BINARY_EXPR, op_str, NULL);
-        add_child(bin_node, node);
-        add_child(bin_node, right);
-        node = bin_node;
-    }
-    return node;
-}
-
-static ASTNode *parse_expression(void) {
-    ASTNode *node = parse_term();
-    while (current_token.type == TOKEN_PLUS || current_token.type == TOKEN_MINUS) {
-        TokenType op_type = current_token.type;
-        const char *op_str = (op_type == TOKEN_PLUS) ? "+" : "-";
-        consume(op_type);
-        ASTNode *right = parse_term();
-        ASTNode *bin_node = create_node(NODE_BINARY_EXPR, op_str, NULL);
-        add_child(bin_node, node);
-        add_child(bin_node, right);
-        node = bin_node;
-    }
-    return node;
-}
-
-static ASTNode *parse_program(void) {
-    consume(TOKEN_PROGRAM);
-    char *prog_name = strdup(current_token.lexeme);
-    consume(TOKEN_IDENTIFIER);
-    ASTNode *prog_node = create_node(NODE_PROGRAM, prog_name, NULL);
-    free(prog_name);
-
-    consume(TOKEN_LBRACE);
-    while (current_token.type == TOKEN_FN) {
-        add_child(prog_node, parse_function());
-    }
-    consume(TOKEN_RBRACE);
-    return prog_node;
-}
-
-static ASTNode *parse_function(void) {
-    consume(TOKEN_FN);
-    char *fn_name = strdup(current_token.lexeme);
-    consume(TOKEN_IDENTIFIER);
-    ASTNode *fn_node = create_node(NODE_FUNCTION, fn_name, NULL);
-    free(fn_name);
-
-    consume(TOKEN_LPAREN);
-    consume(TOKEN_RPAREN);
-    consume(TOKEN_LBRACE);
-
-    while (current_token.type == TOKEN_VAR || current_token.type == TOKEN_OUTPUT) {
-        add_child(fn_node, parse_statement());
-    }
-
-    consume(TOKEN_RBRACE);
-    return fn_node;
-}
-
-static ASTNode *parse_statement(void) {
-    if (current_token.type == TOKEN_VAR) {
-        return parse_var_decl();
-    } else if (current_token.type == TOKEN_OUTPUT) {
-        return parse_output();
+    if (t.type == TOKEN_LPAREN) {
+        ASTNode *expr = parse_expression(p);
+        parser_match(p, TOKEN_RPAREN);
+        return expr;
     }
     return NULL;
 }
 
-static ASTNode *parse_var_decl(void) {
-    consume(TOKEN_VAR);
-    char *var_name = strdup(current_token.lexeme);
-    consume(TOKEN_IDENTIFIER);
-    consume(TOKEN_ASSIGN);
-
-    ASTNode *expr = parse_expression();
-    consume(TOKEN_SEMICOLON);
-
-    ASTNode *var_node = create_node(NODE_VAR_DECL, var_name, NULL);
-    add_child(var_node, expr);
-    free(var_name);
-    return var_node;
-}
-
-static ASTNode *parse_output(void) {
-    consume(TOKEN_OUTPUT);
-    consume(TOKEN_LPAREN);
-    ASTNode *expr = parse_expression();
-    consume(TOKEN_RPAREN);
-    consume(TOKEN_SEMICOLON);
-
-    ASTNode *out_node = create_node(NODE_OUTPUT, NULL, NULL);
-    add_child(out_node, expr);
-    return out_node;
-}
-
-ASTNode *frame_parse(void) {
-    if (current_token.type == TOKEN_PROGRAM) {
-        return parse_program();
+static ASTNode *parse_term(Parser *p) {
+    ASTNode *left = parse_primary(p);
+    while (1) {
+        Token t = parser_peek(p);
+        if (strcmp(t.lexeme, "*") == 0 || strcmp(t.lexeme, "/") == 0) {
+            parser_advance(p);
+            ASTNode *right = parse_primary(p);
+            ASTNode *node = malloc(sizeof(ASTNode));
+            node->type = NODE_BINARY;
+            node->data.binary.left = left;
+            node->data.binary.right = right;
+            strcpy(node->data.binary.op, t.lexeme);
+            left = node;
+        } else {
+            break;
+        }
     }
-    return NULL;
+    return left;
+}
+
+static ASTNode *parse_expression(Parser *p) {
+    ASTNode *left = parse_term(p);
+    while (1) {
+        Token t = parser_peek(p);
+        if (strcmp(t.lexeme, "+") == 0 || strcmp(t.lexeme, "-") == 0) {
+            parser_advance(p);
+            ASTNode *right = parse_term(p);
+            ASTNode *node = malloc(sizeof(ASTNode));
+            node->type = NODE_BINARY;
+            node->data.binary.left = left;
+            node->data.binary.right = right;
+            strcpy(node->data.binary.op, t.lexeme);
+            left = node;
+        } else {
+            break;
+        }
+    }
+    return left;
+}
+
+static ASTNode *parse_statement(Parser *p) {
+    Token t = parser_peek(p);
+    if (t.type == TOKEN_VAR || (t.type == TOKEN_IDENTIFIER && strcmp(t.lexeme, "var") == 0)) {
+        parser_advance(p);
+        Token name_tok = parser_advance(p);
+        parser_match(p, TOKEN_ASSIGN);
+        ASTNode *expr = parse_expression(p);
+        parser_match(p, TOKEN_SEMICOLON);
+
+        ASTNode *node = malloc(sizeof(ASTNode));
+        node->type = NODE_VAR_DECL;
+        node->data.var_decl.name = strdup(name_tok.lexeme);
+        node->data.var_decl.value = expr;
+        return node;
+    }
+    if (t.type == TOKEN_OUTPUT || (t.type == TOKEN_IDENTIFIER && strcmp(t.lexeme, "print") == 0)) {
+        parser_advance(p);
+        ASTNode *expr = parse_expression(p);
+        parser_match(p, TOKEN_SEMICOLON);
+
+        ASTNode *node = malloc(sizeof(ASTNode));
+        node->type = NODE_PRINT;
+        node->data.print.expr = expr;
+        return node;
+    }
+
+    Token next_t = p->current + 1 < p->count ? p->tokens[p->current + 1] : (Token){TOKEN_EOF, "", 0};
+    if (t.type == TOKEN_IDENTIFIER && next_t.type == TOKEN_ASSIGN) {
+        char *name = strdup(parser_advance(p).lexeme);
+        parser_advance(p);
+        ASTNode *expr = parse_expression(p);
+        parser_match(p, TOKEN_SEMICOLON);
+
+        ASTNode *node = malloc(sizeof(ASTNode));
+        node->type = NODE_ASSIGN;
+        node->data.assign.name = name;
+        node->data.assign.value = expr;
+        return node;
+    }
+
+    ASTNode *expr = parse_expression(p);
+    parser_match(p, TOKEN_SEMICOLON);
+    ASTNode *node = malloc(sizeof(ASTNode));
+    node->type = NODE_EXPR_STMT;
+    node->data.expr_stmt.expr = expr;
+    return node;
+}
+
+ASTNode *frame_parse(Token *tokens, int count) {
+    Parser p;
+    p.tokens = tokens;
+    p.count = count;
+    p.current = 0;
+
+    ASTNode **statements = NULL;
+    int count_stmts = 0;
+
+    while (p.current < p.count && parser_peek(&p).type != TOKEN_EOF) {
+        ASTNode *stmt = parse_statement(&p);
+        if (stmt) {
+            statements = realloc(statements, sizeof(ASTNode *) * (count_stmts + 1));
+            statements[count_stmts++] = stmt;
+        } else {
+            break;
+        }
+    }
+
+    ASTNode *program = malloc(sizeof(ASTNode));
+    program->type = NODE_PROGRAM;
+    program->data.program.statements = statements;
+    program->data.program.count = count_stmts;
+    return program;
 }
 
 void free_ast(ASTNode *node) {
     if (!node) return;
-    for (int i = 0; i < node->child_count; i++) {
-        free_ast(node->children[i]);
+    switch (node->type) {
+        case NODE_PROGRAM:
+            for (int i = 0; i < node->data.program.count; i++) {
+                free_ast(node->data.program.statements[i]);
+            }
+            free(node->data.program.statements);
+            break;
+        case NODE_EXPR_STMT:
+            free_ast(node->data.expr_stmt.expr);
+            break;
+        case NODE_PRINT:
+            free_ast(node->data.print.expr);
+            break;
+        case NODE_VAR_DECL:
+            free(node->data.var_decl.name);
+            free_ast(node->data.var_decl.value);
+            break;
+        case NODE_ASSIGN:
+            free(node->data.assign.name);
+            free_ast(node->data.assign.value);
+            break;
+        case NODE_BINARY:
+            free_ast(node->data.binary.left);
+            free_ast(node->data.binary.right);
+            break;
+        case NODE_VARIABLE:
+            free(node->data.variable.name);
+            break;
+        case NODE_CALL:
+            free(node->data.call.name);
+            for (int i = 0; i < node->data.call.arg_count; i++) {
+                free_ast(node->data.call.args[i]);
+            }
+            free(node->data.call.args);
+            break;
+        default:
+            break;
     }
-    free(node->children);
-    free(node->name);
-    free(node->string_value);
     free(node);
-}
-
-void print_ast(ASTNode *node, int indent) {
-    if (!node) return;
-    for (int i = 0; i < indent; i++) printf("  ");
-
-    const char *type_str = "UNKNOWN";
-    if (node->type == NODE_PROGRAM) type_str = "PROGRAM";
-    else if (node->type == NODE_FUNCTION) type_str = "FUNCTION";
-    else if (node->type == NODE_OUTPUT) type_str = "OUTPUT";
-    else if (node->type == NODE_VAR_DECL) type_str = "VAR_DECL";
-    else if (node->type == NODE_BINARY_EXPR) type_str = "BINARY_EXPR";
-    else if (node->type == NODE_LITERAL) type_str = "LITERAL";
-    else if (node->type == NODE_IDENTIFIER) type_str = "IDENTIFIER";
-
-    printf("AST NODE: %s", type_str);
-    if (node->name) printf(" [name/op: %s]", node->name);
-    if (node->string_value) printf(" [value: %s]", node->string_value);
-    printf("\n");
-
-    for (int i = 0; i < node->child_count; i++) {
-        print_ast(node->children[i], indent + 1);
-    }
 }

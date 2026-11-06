@@ -3,14 +3,13 @@
 
 typedef enum {
     TOKEN_EOF = 0,
-    TOKEN_ERROR,
-    TOKEN_PROGRAM,
+    TOKEN_UNKNOWN,
     TOKEN_FN,
     TOKEN_OUTPUT,
     TOKEN_VAR,
     TOKEN_IDENTIFIER,
     TOKEN_STRING,
-    TOKEN_NUMBER,
+    TOKEN_INT,
     TOKEN_LBRACE,
     TOKEN_RBRACE,
     TOKEN_LPAREN,
@@ -20,17 +19,17 @@ typedef enum {
     TOKEN_PLUS,
     TOKEN_MINUS,
     TOKEN_STAR,
-    TOKEN_SLASH
+    TOKEN_SLASH,
+    TOKEN_COMMA
 } TokenType;
 
 typedef struct {
     TokenType type;
     char *lexeme;
     int line;
-    int column;
 } Token;
 
-void raster_init(const char *source_code);
-Token raster_next_token();
+Token *raster_tokenize(const char *source, int *out_count);
+void raster_free_tokens(Token *tokens, int count);
 
 #endif

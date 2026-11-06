@@ -2,8 +2,9 @@
 #define ANVIL_H
 
 #include "frame.h"
+#include "../../COMMON/bytecode.h"
 
-// Función principal de generación de código
-void anvil_generate_code(ASTNode *root, const char *output_name);
+int anvil_compile(ASTNode *root, const char *output_filename);
+int anvil_generate_code(ASTNode *root, const char *output_filename);
 
 #endif

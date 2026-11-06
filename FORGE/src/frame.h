@@ -5,25 +5,61 @@
 
 typedef enum {
     NODE_PROGRAM,
-    NODE_FUNCTION,
+    NODE_EXPR_STMT,
+    NODE_PRINT,
     NODE_VAR_DECL,
-    NODE_OUTPUT,
-    NODE_BINARY_EXPR,
+    NODE_ASSIGN,
+    NODE_BINARY,
     NODE_LITERAL,
-    NODE_IDENTIFIER
-} ASTNodeType;
+    NODE_VARIABLE,
+    NODE_CALL,
+    NODE_IF,
+    NODE_WHILE
+} NodeType;
+
+struct ASTNode;
 
 typedef struct ASTNode {
-    ASTNodeType type;
-    char *name;
-    char *string_value;
-    struct ASTNode **children;
-    int child_count;
+    NodeType type;
+    union {
+        struct {
+            struct ASTNode **statements;
+            int count;
+        } program;
+        struct {
+            struct ASTNode *expr;
+        } expr_stmt;
+        struct {
+            struct ASTNode *expr;
+        } print;
+        struct {
+            char *name;
+            struct ASTNode *value;
+        } var_decl;
+        struct {
+            char *name;
+            struct ASTNode *value;
+        } assign;
+        struct {
+            struct ASTNode *left;
+            struct ASTNode *right;
+            char op[4];
+        } binary;
+        struct {
+            int value;
+        } literal;
+        struct {
+            char *name;
+        } variable;
+        struct {
+            char *name;
+            struct ASTNode **args;
+            int arg_count;
+        } call;
+    } data;
 } ASTNode;
 
-void frame_init(void);
-ASTNode *frame_parse(void);
+ASTNode *frame_parse(Token *tokens, int count);
 void free_ast(ASTNode *node);
-void print_ast(ASTNode *node, int indent);
 
 #endif

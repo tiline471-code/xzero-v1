@@ -5,111 +5,110 @@
 #include "frame.h"
 #include "anvil.h"
 
-#define FORGE_VERSION "0.2.0-alpha"
-
-void print_help() {
-    printf("FORGE v%s - Compilador oficial del lenguaje Kryon (Proyecto XZERO)\n\n", FORGE_VERSION);
-    printf("Uso:\n  forge <comando> [archivo.kry] [-o salida]\n\n");
+static void print_help(void) {
+    printf("FORGE v0.2.0-alpha - Compilador oficial del lenguaje Kryon (Proyecto XZERO)\n\n");
+    printf("Uso:\n");
+    printf("  forge <comando> [archivo.kry] [-o salida]\n\n");
     printf("Comandos disponibles:\n");
     printf("  version    Muestra la versión actual de FORGE\n");
-    printf("  build      Compila un archivo .kry a binario nativo\n");
+    printf("  build      Compila un archivo .kry a binario nativo (.kyb)\n");
     printf("  run        Ejecuta un archivo .kry mostrando tokens y AST\n");
     printf("  help       Muestra esta ayuda\n");
 }
 
-char *read_file(const char *path) {
-    FILE *file = fopen(path, "rb");
-    if (!file) {
-        printf("FORGE Error: No se pudo abrir el archivo '%s'.\n", path);
-        return NULL;
-    }
-    fseek(file, 0, SEEK_END);
-    long length = ftell(file);
-    fseek(file, 0, SEEK_SET);
-
-    char *buffer = (char *)malloc(length + 1);
-    if (!buffer) {
-        printf("FORGE Error: Memoria insuficiente.\n");
-        fclose(file);
-        return NULL;
-    }
-    fread(buffer, 1, length, file);
-    buffer[length] = '\0';
-    fclose(file);
-    return buffer;
+static char *read_file(const char *filename) {
+    FILE *f = fopen(filename, "rb");
+    if (!f) return NULL;
+    fseek(f, 0, SEEK_END);
+    long len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char *buf = malloc(len + 1);
+    fread(buf, 1, len, f);
+    buf[len] = '\0';
+    fclose(f);
+    return buf;
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char **argv) {
     if (argc < 2) {
-        printf("FORGE Error: Faltan argumentos. Prueba 'forge help'.\n");
+        fprintf(stderr, "FORGE Error: Faltan argumentos. Prueba 'forge help'.\n");
         return 1;
     }
 
-    const char *command = argv[1];
-
-    if (strcmp(command, "version") == 0) {
-        printf("FORGE v%s (ARM64 Native Target)\n", FORGE_VERSION);
-    } 
-    else if (strcmp(command, "help") == 0 || strcmp(command, "--help") == 0) {
+    if (strcmp(argv[1], "help") == 0) {
         print_help();
-    } 
-    else if (strcmp(command, "build") == 0) {
+        return 0;
+    }
+
+    if (strcmp(argv[1], "version") == 0) {
+        printf("FORGE v0.2.0-alpha\n");
+        return 0;
+    }
+
+    if (strcmp(argv[1], "build") == 0 || strcmp(argv[1], "run") == 0) {
         if (argc < 3) {
-            printf("FORGE Error: Falta especificar el archivo fuente (.kry).\n");
+            fprintf(stderr, "FORGE Error: Falta el archivo fuente .kry\n");
             return 1;
         }
 
-        const char *filepath = argv[2];
-        const char *output_name = "programa"; // Nombre por defecto del binario
+        const char *input_file = argv[2];
+        const char *output_file = "output.kyb";
+
         if (argc >= 5 && strcmp(argv[3], "-o") == 0) {
-            output_name = argv[4];
+            output_file = argv[4];
         }
 
-        printf("[FORGE PIPELINE] Compilando '%s'...\n", filepath);
-
-        char *source = read_file(filepath);
-        if (!source) return 1;
-
-        raster_init(source);
-        frame_init();
-        ASTNode *root = frame_parse();
-
-        if (root) {
-            // ANVIL genera el código ejecutable final
-            anvil_generate_code(root, output_name);
-            free_ast(root);
-        } else {
-            printf("FORGE Error: Fallo en el análisis sintáctico (AST).\n");
-        }
-
-        free(source);
-    }
-    else if (strcmp(command, "run") == 0) {
-        if (argc < 3) {
-            printf("FORGE Error: Falta especificar el archivo fuente (.kry).\n");
+        char *source = read_file(input_file);
+        if (!source) {
+            fprintf(stderr, "FORGE Error: No se pudo abrir el archivo '%s'\n", input_file);
             return 1;
         }
-        
-        const char *filepath = argv[2];
-        char *source = read_file(filepath);
-        if (!source) return 1;
 
-        raster_init(source);
-        frame_init();
-        ASTNode *root = frame_parse();
+        printf("[FORGE PIPELINE] Compilando '%s'...\n", input_file);
 
-        if (root) {
-            printf("\n--- ÁRBOL DE SINTAXIS ABSTRACTA (AST) ---\n");
-            print_ast(root, 0);
-            printf("-----------------------------------------\n");
-            free_ast(root);
+        int token_count = 0;
+        Token *tokens = raster_tokenize(source, &token_count);
+        if (!tokens) {
+            fprintf(stderr, "FORGE Error: Fallo en el análisis léxico (Raster).\n");
+            free(source);
+            return 1;
         }
+
+        if (strcmp(argv[1], "run") == 0) {
+            printf("--- TOKENS ---\n");
+            for (int i = 0; i < token_count; i++) {
+                printf("Token(%d): type=%d, lexeme='%s'\n", i, tokens[i].type, tokens[i].lexeme);
+            }
+        }
+
+        ASTNode *root = frame_parse(tokens, token_count);
+        if (!root) {
+            fprintf(stderr, "FORGE Error: Fallo en el análisis sintáctico (AST).\n");
+            free(tokens);
+            free(source);
+            return 1;
+        }
+
+        if (strcmp(argv[1], "run") == 0) {
+            printf("--- AST parseado exitosamente ---\n");
+        }
+
+        if (!anvil_generate_code(root, output_file)) {
+            fprintf(stderr, "FORGE Error: Fallo en la generación de código (Anvil).\n");
+            free_ast(root);
+            free(tokens);
+            free(source);
+            return 1;
+        }
+
+        printf("[FORGE PIPELINE] Compilación exitosa -> '%s'\n", output_file);
+
+        free_ast(root);
+        free(tokens);
         free(source);
-    } 
-    else {
-        printf("FORGE Error: Comando desconocido '%s'. Prueba 'forge help'.\n", command);
-        return 1;
+        return 0;
     }
 
-    return 0;
+    fprintf(stderr, "FORGE Error: Comando desconocido '%s'. Prueba 'forge help'.\n", argv[1]);
+    return 1;
 }

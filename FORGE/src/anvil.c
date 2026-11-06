@@ -1,105 +1,138 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "frame.h"
 #include "anvil.h"
 
-static void emit_expression(FILE *out, ASTNode *node) {
-    if (!node) return;
-    if (node->type == NODE_LITERAL) {
-        if (node->string_value) {
-            fprintf(out, "%s", node->string_value);
+typedef struct {
+    char *names[256];
+    int count;
+} SymbolTable;
+
+static SymbolTable sym_table;
+
+static int symbol_lookup(const char *name) {
+    for (int i = 0; i < sym_table.count; i++) {
+        if (strcmp(sym_table.names[i], name) == 0) {
+            return i;
         }
-    } else if (node->type == NODE_IDENTIFIER) {
-        if (node->name) {
-            fprintf(out, "%s", node->name);
-        }
-    } else if (node->type == NODE_BINARY_EXPR) {
-        fprintf(out, "(");
-        if (node->child_count > 0) emit_expression(out, node->children[0]);
-        if (node->name) fprintf(out, " %s ", node->name);
-        if (node->child_count > 1) emit_expression(out, node->children[1]);
-        fprintf(out, ")");
     }
+    if (sym_table.count < 256) {
+        sym_table.names[sym_table.count] = strdup(name);
+        return sym_table.count++;
+    }
+    return 0;
 }
 
-static void emit_node(FILE *out, ASTNode *node) {
-    if (!node) return;
-
-    if (node->type == NODE_PROGRAM) {
-        fprintf(out, "// Generado automáticamente por FORGE (ANVIL Engine)\n");
-        fprintf(out, "#include <stdio.h>\n\n");
-
-        for (int i = 0; i < node->child_count; i++) {
-            emit_node(out, node->children[i]);
-        }
-    } 
-    else if (node->type == NODE_FUNCTION) {
-        if (node->name && strcmp(node->name, "start") == 0) {
-            fprintf(out, "int main(void) {\n");
-        } else {
-            fprintf(out, "void %s(void) {\n", node->name ? node->name : "func");
-        }
-
-        for (int i = 0; i < node->child_count; i++) {
-            emit_node(out, node->children[i]);
-        }
-
-        if (node->name && strcmp(node->name, "start") == 0) {
-            fprintf(out, "    return 0;\n");
-        }
-        fprintf(out, "}\n\n");
-    } 
-    else if (node->type == NODE_VAR_DECL) {
-        if (node->name && node->child_count > 0) {
-            fprintf(out, "    int %s = ", node->name);
-            emit_expression(out, node->children[0]);
-            fprintf(out, ";\n");
+static int add_constant_int(ConstantPool *pool, int val) {
+    for (int i = 0; i < pool->count; i++) {
+        if (pool->values[i].type == VAL_INT && pool->values[i].as.as_int == val) {
+            return i;
         }
     }
-    else if (node->type == NODE_OUTPUT) {
-        if (node->child_count > 0) {
-            // Verificamos si la expresión es un string literal o número/variable numérica
-            // Por simplicidad inicial para output, soportamos tanto cadenas como números/enteros con %s o %d según corresponda, o un formateador genérico.
-            // Hagámoslo robusto detectando el tipo de expresión.
-            ASTNode *expr = node->children[0];
-            if (expr->type == NODE_LITERAL && expr->string_value && expr->string_value[0] == '"') {
-                fprintf(out, "    printf(\"%%s\\n\", ");
-                emit_expression(out, expr);
-                fprintf(out, ");\n");
-            } else {
-                fprintf(out, "    printf(\"%%d\\n\", ");
-                emit_expression(out, expr);
-                fprintf(out, ");\n");
+    Value v;
+    v.type = VAL_INT;
+    v.as.as_int = val;
+    pool_write(pool, v);
+    return pool->count - 1;
+}
+
+static void compile_node(ASTNode *node, ConstantPool *pool, BytecodeChunk *chunk) {
+    if (!node) return;
+
+    switch (node->type) {
+        case NODE_PROGRAM:
+            for (int i = 0; i < node->data.program.count; i++) {
+                compile_node(node->data.program.statements[i], pool, chunk);
             }
-        }
+            break;
+
+        case NODE_EXPR_STMT:
+            compile_node(node->data.expr_stmt.expr, pool, chunk);
+            break;
+
+        case NODE_PRINT:
+            compile_node(node->data.print.expr, pool, chunk);
+            chunk_write(chunk, OP_PRINT);
+            break;
+
+        case NODE_VAR_DECL:
+            compile_node(node->data.var_decl.value, pool, chunk);
+            {
+                int var_idx = symbol_lookup(node->data.var_decl.name);
+                chunk_write(chunk, OP_STORE_VAR);
+                chunk_write(chunk, (uint8_t)var_idx);
+            }
+            break;
+
+        case NODE_ASSIGN:
+            compile_node(node->data.assign.value, pool, chunk);
+            {
+                int var_idx = symbol_lookup(node->data.assign.name);
+                chunk_write(chunk, OP_STORE_VAR);
+                chunk_write(chunk, (uint8_t)var_idx);
+            }
+            break;
+
+        case NODE_BINARY:
+            compile_node(node->data.binary.left, pool, chunk);
+            compile_node(node->data.binary.right, pool, chunk);
+            if (strcmp(node->data.binary.op, "+") == 0) {
+                chunk_write(chunk, OP_ADD);
+            } else if (strcmp(node->data.binary.op, "-") == 0) {
+                chunk_write(chunk, OP_SUB);
+            } else if (strcmp(node->data.binary.op, "*") == 0) {
+                chunk_write(chunk, OP_MUL);
+            } else if (strcmp(node->data.binary.op, "/") == 0) {
+                chunk_write(chunk, OP_DIV);
+            }
+            break;
+
+        case NODE_LITERAL:
+            {
+                int const_idx = add_constant_int(pool, node->data.literal.value);
+                chunk_write(chunk, OP_LOAD_CONST);
+                chunk_write(chunk, (uint8_t)(const_idx & 0xFF));
+                chunk_write(chunk, (uint8_t)((const_idx >> 8) & 0xFF));
+            }
+            break;
+
+        case NODE_VARIABLE:
+            {
+                int var_idx = symbol_lookup(node->data.variable.name);
+                chunk_write(chunk, OP_LOAD_VAR);
+                chunk_write(chunk, (uint8_t)var_idx);
+            }
+            break;
+
+        default:
+            break;
     }
 }
 
-void anvil_generate_code(ASTNode *root, const char *output_name) {
-    if (!root) return;
+int anvil_compile(ASTNode *root, const char *output_filename) {
+    sym_table.count = 0;
 
-    const char *temp_c_file = "_forge_temp.c";
-    FILE *out = fopen(temp_c_file, "w");
-    if (!out) {
-        printf("ANVIL Error: No se pudo crear el archivo temporal de compilación.\n");
-        return;
+    ConstantPool pool;
+    pool_init(&pool);
+
+    BytecodeChunk chunk;
+    chunk_init(&chunk);
+
+    compile_node(root, &pool, &chunk);
+    chunk_write(&chunk, OP_HALT);
+
+    int result = bytecode_serialize(output_filename, &pool, &chunk);
+
+    pool_free(&pool);
+    chunk_free(&chunk);
+
+    for (int i = 0; i < sym_table.count; i++) {
+        free(sym_table.names[i]);
     }
 
-    emit_node(out, root);
-    fclose(out);
+    return result;
+}
 
-    char compile_command[512];
-    snprintf(compile_command, sizeof(compile_command), "clang %s -o %s", temp_c_file, output_name);
-    
-    printf("[ANVIL] Compilando binario nativo con Clang...\n");
-    int result = system(compile_command);
-
-    if (result == 0) {
-        printf("¡Éxito! Binario generado correctamente: ./%s\n", output_name);
-    } else {
-        printf("ANVIL Error: Falló la compilación del código traducido.\n");
-    }
-
-    remove(temp_c_file);
+int anvil_generate_code(ASTNode *root, const char *output_filename) {
+    return anvil_compile(root, output_filename);
 }

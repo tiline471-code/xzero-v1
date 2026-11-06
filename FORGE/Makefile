@@ -1,23 +1,10 @@
 CC = clang
-CFLAGS = -Wall -Wextra -O2
-TARGET = forge
-SRC = src/main.c src/raster.c src/frame.c src/anvil.c
+CFLAGS = -Wall -Wextra -O2 -I../COMMON
 
-all: $(TARGET)
+all: forge
 
-$(TARGET): $(SRC)
-	$(CC) $(CFLAGS) $(SRC) -o $(TARGET)
+forge:
+	$(CC) $(CFLAGS) src/main.c src/raster.c src/frame.c src/anvil.c ../COMMON/bytecode.c -o forge
 
 clean:
-	rm -f $(TARGET)
-
-install: $(TARGET)
-	cp $(TARGET) $(PREFIX)/bin/$(TARGET)
-	chmod +x $(PREFIX)/bin/$(TARGET)
-	@echo "FORGE instalado globalmente!"
-
-uninstall:
-	rm -f $(PREFIX)/bin/$(TARGET)
-	@echo "FORGE desinstalado del sistema."
-
-.PHONY: all clean install uninstall
+	rm -f forge
