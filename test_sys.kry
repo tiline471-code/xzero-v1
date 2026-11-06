@@ -1,0 +1,3 @@
+print "Ejecutando comando del sistema desde Kryon:";
+var status = sys_exec("uname -a");
+print status;

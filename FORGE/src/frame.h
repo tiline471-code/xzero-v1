@@ -11,10 +11,14 @@ typedef enum {
     NODE_ASSIGN,
     NODE_BINARY,
     NODE_LITERAL,
+    NODE_STRING_LITERAL,
     NODE_VARIABLE,
     NODE_CALL,
     NODE_IF,
-    NODE_WHILE
+    NODE_WHILE,
+    NODE_BLOCK,
+    NODE_FN_DECL,
+    NODE_RETURN
 } NodeType;
 
 struct ASTNode;
@@ -49,6 +53,9 @@ typedef struct ASTNode {
             int value;
         } literal;
         struct {
+            char *value;
+        } string_literal;
+        struct {
             char *name;
         } variable;
         struct {
@@ -56,6 +63,28 @@ typedef struct ASTNode {
             struct ASTNode **args;
             int arg_count;
         } call;
+        struct {
+            struct ASTNode *condition;
+            struct ASTNode *then_branch;
+            struct ASTNode *else_branch;
+        } if_stmt;
+        struct {
+            struct ASTNode *condition;
+            struct ASTNode *body;
+        } while_stmt;
+        struct {
+            struct ASTNode **statements;
+            int count;
+        } block;
+        struct {
+            char *name;
+            char **params;
+            int param_count;
+            struct ASTNode *body;
+        } fn_decl;
+        struct {
+            struct ASTNode *expr;
+        } return_stmt;
     } data;
 } ASTNode;
 

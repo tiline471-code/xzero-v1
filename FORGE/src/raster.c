@@ -33,6 +33,29 @@ Token *raster_tokenize(const char *source, int *out_count) {
             continue;
         }
 
+        // Cadenas de texto entre comillas dobles
+        if (c == '"') {
+            int start = ++i;
+            while (i < length && source[i] != '"') {
+                i++;
+            }
+            int len = i - start;
+            char *lexeme = malloc(len + 1);
+            memcpy(lexeme, &source[start], len);
+            lexeme[len] = '\0';
+            if (i < length) i++; // saltar comilla de cierre
+
+            if (count >= capacity) {
+                capacity *= 2;
+                tokens = realloc(tokens, sizeof(Token) * capacity);
+            }
+            tokens[count].type = TOKEN_STRING;
+            tokens[count].lexeme = lexeme;
+            tokens[count].line = 1;
+            count++;
+            continue;
+        }
+
         if (is_alpha(c)) {
             int start = i;
             while (i < length && (is_alpha(source[i]) || is_digit(source[i]))) {
@@ -46,7 +69,11 @@ Token *raster_tokenize(const char *source, int *out_count) {
             TokenType type = TOKEN_IDENTIFIER;
             if (strcmp(lexeme, "var") == 0) type = TOKEN_VAR;
             else if (strcmp(lexeme, "print") == 0) type = TOKEN_OUTPUT;
+            else if (strcmp(lexeme, "if") == 0) type = TOKEN_IF;
+            else if (strcmp(lexeme, "else") == 0) type = TOKEN_ELSE;
+            else if (strcmp(lexeme, "while") == 0) type = TOKEN_WHILE;
             else if (strcmp(lexeme, "fn") == 0) type = TOKEN_FN;
+            else if (strcmp(lexeme, "return") == 0) type = TOKEN_IDENTIFIER; // se maneja por lexema
 
             if (count >= capacity) {
                 capacity *= 2;
@@ -81,21 +108,26 @@ Token *raster_tokenize(const char *source, int *out_count) {
         }
 
         TokenType type = TOKEN_UNKNOWN;
-        char lexeme[2] = {c, '\0'};
+        char lexeme[3] = {c, '\0', '\0'};
 
-        if (c == '=') type = TOKEN_ASSIGN;
-        else if (c == '+') type = TOKEN_PLUS;
-        else if (c == '-') type = TOKEN_MINUS;
-        else if (c == '*') type = TOKEN_STAR;
-        else if (c == '/') type = TOKEN_SLASH;
-        else if (c == ';') type = TOKEN_SEMICOLON;
-        else if (c == '(') type = TOKEN_LPAREN;
-        else if (c == ')') type = TOKEN_RPAREN;
-        else if (c == '{') type = TOKEN_LBRACE;
-        else if (c == '}') type = TOKEN_RBRACE;
-        else if (c == ',') type = TOKEN_COMMA;
+        if (c == '=' && i + 1 < length && source[i+1] == '=') {
+            type = TOKEN_EQUAL_EQUAL;
+            lexeme[0] = '='; lexeme[1] = '='; lexeme[2] = '\0';
+            i += 2;
+        } else if (c == '=') { type = TOKEN_ASSIGN; i++; }
+        else if (c == '<') { type = TOKEN_LESS; i++; }
+        else if (c == '+') { type = TOKEN_PLUS; i++; }
+        else if (c == '-') { type = TOKEN_MINUS; i++; }
+        else if (c == '*') { type = TOKEN_STAR; i++; }
+        else if (c == '/') { type = TOKEN_SLASH; i++; }
+        else if (c == ';') { type = TOKEN_SEMICOLON; i++; }
+        else if (c == '(') { type = TOKEN_LPAREN; i++; }
+        else if (c == ')') { type = TOKEN_RPAREN; i++; }
+        else if (c == '{') { type = TOKEN_LBRACE; i++; }
+        else if (c == '}') { type = TOKEN_RBRACE; i++; }
+        else if (c == ',') { type = TOKEN_COMMA; i++; }
+        else { i++; }
 
-        i++;
         if (count >= capacity) {
             capacity *= 2;
             tokens = realloc(tokens, sizeof(Token) * capacity);

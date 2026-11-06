@@ -1,0 +1,7 @@
+fn saludar(nombre) {
+    print "Hola desde Kryon para:";
+    return 35;
+}
+
+var x = saludar(10);
+print x;
